@@ -23,10 +23,10 @@ Original files → Baseline → Proposal → Validate → Candidate tests
 ```
 
 ## Live demo URL
-Not deployed in this session: GitHub/Vercel authentication is unavailable. No public URL is claimed. See [deployment instructions](docs/DEPLOY.md). The project ZIP contains source, lockfiles, tests and documentation.
+Deployment is being connected to https://github.com/KancharlaSatwik07/hacknex-aiagent. See [deployment instructions](docs/DEPLOY.md). The project ZIP contains source, lockfiles, tests and documentation.
 
 ## Tech stack and models
-React + TypeScript + Vite, custom CSS, Motion for timeline transitions, Lucide icons. Python serverless handlers, pytest, official `google-genai` client. No database or login. Gemini default: `gemini-3.8-flash`; fallback: `models/gemini-3.7-flash`, as requested in the brief. These names are configuration defaults, not a claim of model availability. On 404, list available models and choose a Flash model supporting `generateContent`.
+React + TypeScript + Vite, custom CSS, Motion for timeline transitions, Lucide icons. Python serverless handlers, pytest, official `google-genai` client. No database or login. Gemini default: `gemini-flash-latest`; fallback: `models/gemini-3.7-flash`, as requested in the brief. These names are configuration defaults, not a claim of model availability. On 404, list available models and choose a Flash model supporting `generateContent`.
 
 429/503 responses retry after 0, 3, and 8 seconds per model, then fallback. JSON parsing handles fences and retries malformed proposals. Provider errors are sanitized. Provider retries share a 48-second soft deadline with six-second per-call timeouts and SDK automatic retries disabled; frontend reports failure without accepting changes. Model listing or network overhead may still exceed host limits. Propose is configured for 60 seconds; older host plans may require reducing retries or an asynchronous queue.
 
@@ -61,7 +61,7 @@ Set variables in the terminal that starts the Python server, or the host environ
 | Variable | Default | Purpose |
 |---|---|---|
 | GEMINI_API_KEY | absent | Server-only key. Missing key means explicitly labeled offline mode. |
-| GEMINI_MODEL | gemini-3.8-flash | Primary model; availability checked by API. |
+| GEMINI_MODEL | gemini-flash-latest | Primary model; availability checked by API. |
 | GEMINI_FALLBACK_MODEL | models/gemini-3.7-flash | Fallback before discovery. |
 | ALLOW_TRUSTED_CODE | 0 | Set to 1 **locally only** for custom trusted code; ignored on Vercel. |
 
@@ -94,7 +94,7 @@ Output: 3/2 → 5/0, accepted, zero regressions. Root cause: add overwrote the p
 ## Scope note
 **MVP built:** three demo variants across two codebases; editable project files and tasks; add Python file; real pytest baseline/verification; Gemini integration; offline mode; three-attempt browser loop; reviewable diff/root cause; evidence export; responsive keyboard-accessible UI; reduced motion; regression and validation tests; Vercel configuration.
 
-**Not built:** isolated arbitrary-code execution service, automatic test generation, non-Python support, large-repository semantic search, persistent history, uploads, production authentication/rate limiting. Public live AI proposals can be displayed but are executable only if they exactly match a reviewed demo snapshot. General live repair is a trusted-local capability until a real sandbox is integrated. Test success is evidence, not proof of universal correctness.
+**Not built:** isolated arbitrary-code execution service, automatic test generation, non-Python support, large-repository semantic search, persistent history, uploads, production authentication/rate limiting. On public hosting Gemini selects and explains a reviewed demo repair; executable content must exactly match that approved snapshot. General live repair is a trusted-local capability until a real sandbox is integrated. Test success is evidence, not proof of universal correctness.
 
 ## Limitations
 Public hosting and real-key model integration were not verified in this session. No API key was available. Automated tests cover model retry/discovery with mocks. Hidden tests are not known; unchanged visible test files cannot prove hidden correctness. Ordinary feature requests for a suite that already fully passes are intentionally short-circuited as “No repair needed”; add a failing feature test first. Network denial is not implemented; public execution is restricted to reviewed snapshots. Browser state is lost on reload. Code editor is a lightweight textarea, not a full IDE.

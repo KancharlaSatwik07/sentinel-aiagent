@@ -8,3 +8,6 @@ __pycache__/
 !.env.example
 .vercel/
 *.zip
+
+.DS_Store
+hacknex-psi09-agent-web/
