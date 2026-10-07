@@ -41,7 +41,7 @@ npm run build
 
 ## OpenRouter setup and live check
 
-Set `OPENROUTER_API_KEY` in the server environment or ignored local `.env`. The browser only receives configuration status and the model name. Click **Test connection** to send a small server-side chat-completions request; the token never reaches the browser. `OPENROUTER_MODEL` defaults to `openrouter/free`, which automatically selects an available free model. Free model availability and rate limits can change; an optional `OPENROUTER_FALLBACK_MODEL` must be a free model ID. Public hosting blocks model calls unless `ENABLE_PUBLIC_AI=1`; do not turn that on without authentication, rate limits, abuse monitoring, and spending controls.
+Set `OPENROUTER_API_KEY` in the server environment or ignored local `.env`. The browser only receives configuration status and the model name. Click **Test connection** to send a small server-side chat-completions request; the token never reaches the browser. `OPENROUTER_MODEL` defaults to `openrouter/free`, which automatically selects an available free model. Free model availability and rate limits can change; an optional `OPENROUTER_FALLBACK_MODEL` must be a free model ID. On Vercel, add both `OPENROUTER_API_KEY` and `ENABLE_PUBLIC_AI=1` in **Project Settings → Environment Variables**, then redeploy. Do not enable public AI without authentication, rate limits, abuse monitoring, and spending controls.
 
 Never commit credentials or place them in a `VITE_` variable. If an API key was pasted into a chat or shared log, revoke it in [OpenRouter key settings](https://openrouter.ai/settings/keys) and replace the local environment value.
 
