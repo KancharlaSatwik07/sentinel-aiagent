@@ -1,69 +1,811 @@
-import React, { useEffect, useState } from 'react';
-import { createRoot } from 'react-dom/client';
-import { motion, MotionConfig } from 'motion/react';
-import { ShieldCheck, ArrowUpRight, Play, Check, ChevronRight, Code2, FileCode2, FlaskConical, GitBranch, Download, RotateCcw, Circle, LoaderCircle, Terminal, Plus, X, ArrowRight, LockKeyhole, Activity, Sparkles } from 'lucide-react';
-import demoData from '../data/demos.json';
-import './style.css';
+import React, { useEffect, useState } from "react";
+import { createRoot } from "react-dom/client";
+import { motion, MotionConfig } from "motion/react";
+import {
+  ShieldCheck,
+  ArrowUpRight,
+  Play,
+  Check,
+  ChevronRight,
+  Code2,
+  FileCode2,
+  FlaskConical,
+  GitBranch,
+  Download,
+  RotateCcw,
+  Circle,
+  LoaderCircle,
+  Terminal,
+  Plus,
+  X,
+  ArrowRight,
+  LockKeyhole,
+  Activity,
+  Sparkles,
+} from "lucide-react";
+import demoData from "../data/demos.json";
+import "./style.css";
 
-type Files = Record<string,string>;
-type Evidence = {passing:string[];failing:string[];skipped:string[];errors:string[];valid:boolean;output:string};
-type Proposal = {explanation:string;edits:{file:string;content:string}[];model:string;mode:string};
-type Verification = {accepted:boolean;regressions:string[];reason:string;after:Evidence;diff:string;files_changed:string[]};
-type Entry = {title:string;detail:string;state:'ok'|'bad'|'working'; output?:string};
-type Attempt = {number:number;proposal?:Proposal;result?:Verification;error?:string};
-const demos = demoData as {id:string;name:string;description:string;task:string;files:Files;fixed:Files;explanation:string;expected:number[]}[];
-async function api<T>(route:string, body?:unknown):Promise<T> {
-  const response = await fetch('/api/'+route, {method:body?'POST':'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(route==='propose'?180000:25000)});
-  if (!response.headers.get('content-type')?.includes('application/json')) throw new Error('API unavailable. Start the Python server or check your deployment.');
-  const value = await response.json(); if (!response.ok) throw new Error(value.error || 'Request failed. No changes were kept.'); return value;
+type Files = Record<string, string>;
+type Evidence = {
+  passing: string[];
+  failing: string[];
+  skipped: string[];
+  errors: string[];
+  valid: boolean;
+  output: string;
+};
+type Proposal = {
+  explanation: string;
+  edits: { file: string; content: string }[];
+  model: string;
+  mode: string;
+};
+type Verification = {
+  accepted: boolean;
+  regressions: string[];
+  reason: string;
+  after: Evidence;
+  diff: string;
+  files_changed: string[];
+};
+type Entry = {
+  title: string;
+  detail: string;
+  state: "ok" | "bad" | "working";
+  output?: string;
+};
+type Attempt = {
+  number: number;
+  proposal?: Proposal;
+  result?: Verification;
+  error?: string;
+};
+const demos = demoData as unknown as {
+  id: string;
+  name: string;
+  description: string;
+  task: string;
+  files: Files;
+  fixed: Files;
+  explanation: string;
+  expected: number[];
+}[];
+async function api<T>(route: string, body?: unknown): Promise<T> {
+  const response = await fetch("/api/" + route, {
+    method: body ? "POST" : "GET",
+    headers: { "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(route === "propose" ? 180000 : 25000),
+  });
+  if (!response.headers.get("content-type")?.includes("application/json"))
+    throw new Error(
+      "API unavailable. Start the Python server or check your deployment.",
+    );
+  const value = await response.json();
+  if (!response.ok)
+    throw new Error(value.error || "Request failed. No changes were kept.");
+  return value;
 }
-function App(){
-  const [demoId,setDemoId]=useState('cart'); const demo=demos.find(d=>d.id===demoId)!;
-  const [files,setFiles]=useState<Files>({...demos[0].files}); const [active,setActive]=useState('cart.py'); const [task,setTask]=useState(demos[0].task);
-  const [config,setConfig]=useState<{mode:string;model:string;custom_execution:boolean}|null>(null);
-  const [busy,setBusy]=useState(false); const [entries,setEntries]=useState<Entry[]>([]); const [before,setBefore]=useState<Evidence|null>(null); const [result,setResult]=useState<Verification|null>(null); const [proposal,setProposal]=useState<Proposal|null>(null); const [attempts,setAttempts]=useState<Attempt[]>([]); const [error,setError]=useState(''); const [tab,setTab]=useState<'diff'|'explanation'|'logs'>('diff'); const [done,setDone]=useState(false); const [runTask,setRunTask]=useState(''); const [newFile,setNewFile]=useState(''); const [adding,setAdding]=useState(false);
-  useEffect(()=>{api<typeof config>('status').then(setConfig).catch(e=>setError(e.message))},[]);
-  function reset(id=demoId){const d=demos.find(x=>x.id===id)!;setDemoId(id);setFiles({...d.files});setActive(Object.keys(d.files)[0]);setTask(d.task);setEntries([]);setBefore(null);setResult(null);setProposal(null);setAttempts([]);setError('');setDone(false);setAdding(false)}
-  function addFile(){if(!/^(?!.*\.\.)(?!\/)[\w/-]+\.py$/.test(newFile)||files[newFile]!==undefined){setError('Use a unique relative Python filename, such as helpers.py.');return} setFiles({...files,[newFile]:''});setActive(newFile);setNewFile('');setAdding(false);setError('')}
-  async function run(){
-    setBusy(true);setError('');setDone(false);setBefore(null);setResult(null);setProposal(null);setAttempts([]);setRunTask(task);setEntries([{title:'Running baseline',detail:'Collecting real pytest evidence from your original files.',state:'working'}]);
-    const original={...files}; let feedback=''; const history:Attempt[]=[];
-    try{
-      const baseline=await api<Evidence>('baseline',{files:original});setBefore(baseline);
-      setEntries([{title:'Baseline recorded',detail:`${baseline.passing.length} passed · ${baseline.failing.length} failed · ${baseline.skipped.length} skipped`,state:baseline.valid?'ok':'bad',output:baseline.output}]);
-      if(!baseline.valid) throw new Error('The baseline could not be collected reliably. Fix test collection before running the agent.');
-      if(!baseline.failing.length){setEntries(e=>[...e,{title:'No repair needed',detail:'All tests already pass. Original code preserved.',state:'ok'}]);setDone(true);return}
-      for(let n=1;n<=3;n++){
-        setEntries(e=>[...e,{title:`Attempt ${n} · proposing a fix`,detail:config?.mode==='offline'?'Loading the recorded fix for this exact demo.':'Asking Gemini for the smallest relevant change.',state:'working'}]);
-        let p:Proposal|undefined;
-        try{
-          p=await api<Proposal>('propose',{task,files:original,test_output:baseline.output,feedback});setProposal(p);
-          setEntries(e=>[...e.slice(0,-1),{title:`Attempt ${n} · verifying`,detail:`${p!.edits.length} proposed file change(s). Re-running the test suite.`,state:'working'}]);
-          const v=await api<Verification>('verify',{files:original,edits:p.edits,baseline});setResult(v);history.push({number:n,proposal:p,result:v});setAttempts([...history]);
-          setEntries(e=>[...e.slice(0,-1),{title:`Attempt ${n} · ${v.accepted?'accepted':'discarded'}`,detail:`${v.after.passing.length} passed · ${v.after.failing.length} failed · ${v.regressions.length} regressions. ${v.reason}`,state:v.accepted?'ok':'bad',output:v.after.output}]);
-          if(v.accepted){const next={...original};p.edits.forEach(edit=>next[edit.file]=edit.content);setFiles(next);setDone(true);return}
-          feedback=v.reason+'\n'+v.after.output;
-        }catch(e){const message=e instanceof Error?e.message:'Request failed';history.push({number:n,proposal:p,error:message});setAttempts([...history]);feedback=message;setEntries(es=>[...es.slice(0,-1),{title:`Attempt ${n} · discarded`,detail:message,state:'bad'}])}
+function App() {
+  const [demoId, setDemoId] = useState("cart");
+  const demo = demos.find((d) => d.id === demoId)!;
+  const [files, setFiles] = useState<Files>({ ...demos[0].files });
+  const [active, setActive] = useState("cart.py");
+  const [task, setTask] = useState(demos[0].task);
+  const [config, setConfig] = useState<{
+    mode: string;
+    model: string;
+    custom_execution: boolean;
+  } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [entries, setEntries] = useState<Entry[]>([]);
+  const [before, setBefore] = useState<Evidence | null>(null);
+  const [result, setResult] = useState<Verification | null>(null);
+  const [proposal, setProposal] = useState<Proposal | null>(null);
+  const [attempts, setAttempts] = useState<Attempt[]>([]);
+  const [error, setError] = useState("");
+  const [tab, setTab] = useState<"diff" | "explanation" | "logs">("diff");
+  const [done, setDone] = useState(false);
+  const [runTask, setRunTask] = useState("");
+  const [newFile, setNewFile] = useState("");
+  const [adding, setAdding] = useState(false);
+  useEffect(() => {
+    api<typeof config>("status")
+      .then(setConfig)
+      .catch((e) => setError(e.message));
+  }, []);
+  function reset(id = demoId) {
+    const d = demos.find((x) => x.id === id)!;
+    setDemoId(id);
+    setFiles({ ...d.files });
+    setActive(Object.keys(d.files)[0]);
+    setTask(d.task);
+    setEntries([]);
+    setBefore(null);
+    setResult(null);
+    setProposal(null);
+    setAttempts([]);
+    setError("");
+    setDone(false);
+    setAdding(false);
+  }
+  function invalidateEvidence() {
+    setDone(false);
+    setBefore(null);
+    setResult(null);
+    setProposal(null);
+    setAttempts([]);
+    setEntries([]);
+  }
+  function addFile() {
+    if (
+      !/^(?!.*\.\.)(?!\/)[\w/-]+\.py$/.test(newFile) ||
+      files[newFile] !== undefined
+    ) {
+      setError("Use a unique relative Python filename, such as helpers.py.");
+      return;
+    }
+    invalidateEvidence();
+    setFiles({ ...files, [newFile]: "" });
+    setActive(newFile);
+    setNewFile("");
+    setAdding(false);
+    setError("");
+  }
+  async function run() {
+    setBusy(true);
+    setError("");
+    setDone(false);
+    setBefore(null);
+    setResult(null);
+    setProposal(null);
+    setAttempts([]);
+    setRunTask(task);
+    setEntries([
+      {
+        title: "Running baseline",
+        detail: "Collecting real pytest evidence from your original files.",
+        state: "working",
+      },
+    ]);
+    const original = { ...files };
+    let feedback = "";
+    const history: Attempt[] = [];
+    try {
+      const baseline = await api<Evidence>("baseline", { files: original });
+      setBefore(baseline);
+      setEntries([
+        {
+          title: "Baseline recorded",
+          detail: `${baseline.passing.length} passed · ${baseline.failing.length} failed · ${baseline.skipped.length} skipped`,
+          state: baseline.valid ? "ok" : "bad",
+          output: baseline.output,
+        },
+      ]);
+      if (!baseline.valid)
+        throw new Error(
+          "The baseline could not be collected reliably. Fix test collection before running the agent.",
+        );
+      if (!baseline.failing.length) {
+        setEntries((e) => [
+          ...e,
+          {
+            title: "No repair needed",
+            detail: "All tests already pass. Original code preserved.",
+            state: "ok",
+          },
+        ]);
+        setDone(true);
+        return;
       }
-      setEntries(e=>[...e,{title:'Original code preserved',detail:'No safe fix was verified after 3 attempts.',state:'bad'}]);setDone(true);
-    }catch(e){setError(e instanceof Error?e.message:'Something went wrong');setEntries(es=>es.map(x=>x.state==='working'?{...x,state:'bad',detail:'Stopped. No changes kept.'}:x))}finally{setBusy(false)}
+      for (let n = 1; n <= 3; n++) {
+        setEntries((e) => [
+          ...e,
+          {
+            title: `Attempt ${n} · proposing a fix`,
+            detail:
+              config?.mode === "offline"
+                ? "Loading the recorded fix for this exact demo."
+                : "Asking Gemini for the smallest relevant change.",
+            state: "working",
+          },
+        ]);
+        let p: Proposal | undefined;
+        try {
+          p = await api<Proposal>("propose", {
+            task,
+            files: original,
+            test_output: baseline.output,
+            feedback,
+          });
+          setProposal(p);
+          setEntries((e) => [
+            ...e.slice(0, -1),
+            {
+              title: `Attempt ${n} · verifying`,
+              detail: `${p!.edits.length} proposed file change(s). Re-running the test suite.`,
+              state: "working",
+            },
+          ]);
+          const v = await api<Verification>("verify", {
+            files: original,
+            edits: p.edits,
+            baseline,
+          });
+          setResult(v);
+          history.push({ number: n, proposal: p, result: v });
+          setAttempts([...history]);
+          setEntries((e) => [
+            ...e.slice(0, -1),
+            {
+              title: `Attempt ${n} · ${v.accepted ? "accepted" : "discarded"}`,
+              detail: `${v.after.passing.length} passed · ${v.after.failing.length} failed · ${v.regressions.length} regressions. ${v.reason}`,
+              state: v.accepted ? "ok" : "bad",
+              output: v.after.output,
+            },
+          ]);
+          if (v.accepted) {
+            const next = { ...original };
+            p.edits.forEach((edit) => (next[edit.file] = edit.content));
+            setFiles(next);
+            setDone(true);
+            return;
+          }
+          feedback = v.reason + "\n" + v.after.output;
+        } catch (e) {
+          const message = e instanceof Error ? e.message : "Request failed";
+          history.push({ number: n, proposal: p, error: message });
+          setAttempts([...history]);
+          feedback = message;
+          setEntries((es) => [
+            ...es.slice(0, -1),
+            {
+              title: `Attempt ${n} · discarded`,
+              detail: message,
+              state: "bad",
+            },
+          ]);
+        }
+      }
+      setEntries((e) => [
+        ...e,
+        {
+          title: "Original code preserved",
+          detail: "No safe fix was verified after 3 attempts.",
+          state: "bad",
+        },
+      ]);
+      setDone(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
+      setEntries((es) =>
+        es.map((x) =>
+          x.state === "working"
+            ? { ...x, state: "bad", detail: "Stopped. No changes kept." }
+            : x,
+        ),
+      );
+    } finally {
+      setBusy(false);
+    }
   }
-  function download(){
-    const text=`# Sentinel verification report\n\nTask: ${runTask}\n\nMode: ${proposal?.mode||config?.mode} — ${proposal?.model||config?.model}\n\nBaseline: ${before?.passing.length} passing / ${before?.failing.length} failing\n\nDecision: ${result?.accepted?'Accepted':before?.failing.length===0?'No repair needed':'No safe fix; original files unchanged'}\n\n`+attempts.map(a=>`## Attempt ${a.number}\n${a.result?.accepted?'Accepted':'Discarded'}: ${a.error||a.result?.reason}\n\nFiles changed: ${a.result?.files_changed.join(', ')||'none'}\n\n${a.proposal?.explanation||''}\n\nAfter: ${a.result?.after.passing.length??'—'} passing / ${a.result?.after.failing.length??'—'} failing; regressions: ${a.result?.regressions.join(', ')||'none'}\n\n\`\`\`diff\n${a.result?.diff||''}\n\`\`\`\n`).join('\n');
-    const url=URL.createObjectURL(new Blob([text],{type:'text/markdown'}));const a=document.createElement('a');a.href=url;a.download='sentinel-evidence.md';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  function download() {
+    const text =
+      `# Sentinel verification report\n\nTask: ${runTask}\n\nMode: ${proposal?.mode || config?.mode} — ${proposal?.model || config?.model}\n\nBaseline: ${before?.passing.length} passing / ${before?.failing.length} failing\n\nDecision: ${result?.accepted ? "Accepted" : before?.failing.length === 0 ? "No repair needed" : "No safe fix; original files unchanged"}\n\n` +
+      attempts
+        .map(
+          (a) =>
+            `## Attempt ${a.number}\n${a.result?.accepted ? "Accepted" : "Discarded"}: ${a.error || a.result?.reason}\n\nFiles changed: ${a.result?.files_changed.join(", ") || "none"}\n\n${a.proposal?.explanation || ""}\n\nAfter: ${a.result?.after.passing.length ?? "—"} passing / ${a.result?.after.failing.length ?? "—"} failing; regressions: ${a.result?.regressions.join(", ") || "none"}\n\n\`\`\`diff\n${a.result?.diff || ""}\n\`\`\`\n`,
+        )
+        .join("\n");
+    const url = URL.createObjectURL(
+      new Blob([text], { type: "text/markdown" }),
+    );
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "sentinel-evidence.md";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-  const passed=result?.accepted?result.after.passing.length:before?.passing.length;const failed=result?.accepted?result.after.failing.length:before?.failing.length;
-  return <MotionConfig reducedMotion="user"><div className="app-shell">
-    <aside className="rail"><a href="#" className="brand-icon" aria-label="Sentinel home"><ShieldCheck size={23}/></a><div className="rail-line"/><a href="#workspace" className="rail-item selected" aria-label="Workspace"><Code2 size={21}/></a><a href="#evidence" className="rail-item" aria-label="Verification evidence"><Activity size={20}/></a><a href="#how" className="rail-item" aria-label="How it works"><GitBranch size={20}/></a><span className="rail-bottom">S<span className="online-dot"/></span></aside>
-    <div className="main"><header><div className="wordmark">sentinel<span className="slash">/</span><span className="header-label">Engineering workspace</span></div><div className="header-right"><span className="version">HACKNEX ’26</span><span className="avatar">HN</span></div></header>
-    <main><section className="intro"><div><div className="eyebrow"><span className="lime-dot"/> SAFE AI SOFTWARE ENGINEERING</div><h1>Better code. <span>Zero regressions.</span></h1><p>Let AI make the change. Let your tests decide what stays.</p></div><div className="intro-tag"><ShieldCheck size={16}/> Evidence over promises</div></section>
-    <div className="mode-banner"><div className="mode-copy"><span className="banner-icon"><Terminal size={17}/></span><strong>{config?.mode==='live'?'Live AI mode':config?'Offline demo mode':'Connecting to runner'}</strong><span>{config?.mode==='live'?'Gemini proposes. Pytest verifies.':config?'Recorded fixes. Real tests. No live AI calls.':'Checking backend availability…'}</span></div><span className="mode-pill">{config?.model||'Connecting'}</span></div>
-    <section id="how" className="workflow" aria-label="How it works">{['Run tests','Ask AI','Apply to copy','Re-test','Keep or revert'].map((s,i)=><React.Fragment key={s}><div><span className={busy&&i===1?'step-num active':'step-num'}>{String(i+1).padStart(2,'0')}</span><span>{s}</span>{i===4&&<ShieldCheck size={15} className="lime"/>}</div>{i<4&&<ChevronRight className="workflow-arrow" size={15}/>}</React.Fragment>)}</section>
-    <div id="workspace" className="workspace"><section className="panel project-panel"><div className="panel-title"><div><span className="tiny-square"/> Project workspace</div><span className="muted mono">01</span></div><div className="project-picker"><label htmlFor="project">DEMO PROJECT</label><select id="project" disabled={busy} value={demoId} onChange={e=>reset(e.target.value)}>{demos.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select><p>{demo.description}</p></div><div className="editor"><div className="file-tabs" role="tablist" aria-label="Project files">{Object.keys(files).map(p=><button role="tab" aria-selected={active===p} disabled={busy} className={active===p?'file-tab active':'file-tab'} key={p} onClick={()=>setActive(p)}><FileCode2 size={13}/>{p}</button>)}<button disabled={busy} className="add-file" aria-label="Add Python file" onClick={()=>setAdding(!adding)}><Plus size={14}/></button></div>{adding&&<form className="add-row" onSubmit={e=>{e.preventDefault();addFile()}}><input aria-label="New Python filename" placeholder="helpers.py" value={newFile} onChange={e=>setNewFile(e.target.value)}/><button type="submit">Add</button></form>}<div className="editor-body"><div className="line-numbers" aria-hidden="true">{files[active]?.split('\n').map((_,i)=><span key={i}>{i+1}</span>)}</div><textarea aria-label={`Edit ${active}`} className="code-input" spellCheck={false} disabled={busy} value={files[active]||''} onChange={e=>{setFiles({...files,[active]:e.target.value});setDone(false)}}/></div><div className="editor-footer"><span><span className="python-dot"/> Python</span><span>UTF-8 <span className="divider">|</span> {Object.keys(files).length} files</span></div></div><div className="task-input"><label htmlFor="task"><Sparkles size={14}/> WHAT SHOULD THE AGENT DO?</label><textarea id="task" disabled={busy} value={task} onChange={e=>{setTask(e.target.value);setDone(false)}}/><div className="run-row"><span><LockKeyhole size={12}/> Existing tests protected</span><button className="run-button" onClick={run} disabled={busy||!task.trim()||!config}>{busy?<LoaderCircle size={15} className="spin"/>:<Play size={14} fill="currentColor"/>}{busy?'Verifying…':'Run agent'}{!busy&&<span className="key-hint">↵</span>}</button></div></div></section>
-    <section className="panel execution-panel"><div className="panel-title"><div><Activity size={16}/> Agent observer</div><span className={'status-badge '+(busy?'running':result?.accepted?'success':'')}>{busy?'RUNNING':result?.accepted?'VERIFIED':done?'COMPLETE':'READY'}</span></div><div className="observer-heading"><div className="observer-orb"><ShieldCheck size={26}/></div><div><h2>{result?.accepted?'A safer change, verified.':busy?'Working toward a safe fix.':'Every change earns its place.'}</h2><p>{result?.accepted?'Your passing tests stayed passing.':busy?'Follow each decision as it happens.':'The agent proposes. The verification gate decides.'}</p></div></div><div className="metrics"><div><span>PASSING</span><strong className={passed!==undefined?'lime':''}>{passed??'—'}<small>{before&&result?.accepted?` / ${before.passing.length+before.failing.length}`:''}</small></strong></div><div><span>FAILING</span><strong className={failed?'red':''}>{failed??'—'}</strong></div><div><span>REGRESSIONS</span><strong>{result?result.regressions.length:'—'}</strong></div></div><div className="timeline-label"><span>EXECUTION TIMELINE</span><span className="mono">{attempts.length} / 3 attempts</span></div><div className="timeline" aria-live="polite">{entries.length?entries.map((e,i)=><motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} className={'timeline-entry '+e.state} key={i}><span className="timeline-dot">{e.state==='working'?<LoaderCircle size={13} className="spin"/>:e.state==='ok'?<Check size={13}/>:<X size={13}/>}</span><div><h3>{e.title}</h3><p>{e.detail}</p></div></motion.div>):<><div className="timeline-entry"><span className="timeline-dot"><Circle size={11}/></span><div><h3>Waiting for your first run</h3><p>Select a project, review the task, and run the agent.</p></div></div><div className="empty-terminal"><span className="terminal-prompt">❯</span> ready to verify<span className="cursor"/><div>Test results will appear here.</div></div></>}</div><div className="gate-note"><ShieldCheck size={16}/><span>Keep only if failures decrease and no passing test regresses.</span></div></section></div>
-    {error&&<div className="error-banner" role="alert"><X size={17}/>{error}<button onClick={()=>setError('')} aria-label="Dismiss error"><X size={15}/></button></div>}
-    <section id="evidence" className="panel evidence"><div className="panel-title"><div><GitBranch size={16}/> Verification evidence <span className="subtle-pill">{result?result.files_changed.length+' files changed':'No changes yet'}</span></div><div className="evidence-actions"><button disabled={busy} onClick={()=>reset()}><RotateCcw size={13}/><span>Reset demo</span></button><button disabled={!done||!before||busy} onClick={download}><Download size={14}/><span>Export report</span></button></div></div><div className="evidence-tabs">{(['diff','explanation','logs'] as const).map(t=><button key={t} className={tab===t?'active':''} onClick={()=>setTab(t)}>{t==='diff'?'Code diff':t==='explanation'?'Root cause':'Test output'}</button>)}<span>{result?.accepted?<><span className="lime-dot"/> Change accepted</>:result?'Candidate discarded':'Awaiting verification'}</span></div>{tab==='diff'?(result?.diff?<pre className="diff">{result.diff.split('\n').map((l,i)=><span key={i} className={l.startsWith('+')?'added':l.startsWith('-')?'removed':l.startsWith('@@')?'hunk':''}>{l||' '}</span>)}</pre>:<div className="evidence-empty"><div className="diff-symbol"><span>−</span><span>+</span></div><div><h3>A clear record of every change.</h3><p>Run the agent to see the diff, root cause, and test evidence.</p></div><ArrowUpRight size={21}/></div>):tab==='explanation'?<div className="explanation"><h3>{proposal?'Why this change?':'Understand the fix, not just the code.'}</h3><p>{proposal?.explanation||'The verified proposal will include a plain-English explanation of the root cause.'}</p>{result&&<p className="muted">{result.reason}</p>}</div>:<pre className="logs">{result?.after.output||before?.output||'No test output yet. Run the agent to execute pytest.'}</pre>}</section>
-    <footer><span><ShieldCheck size={13}/> Built to verify. Designed to explain.</span><span>HNX26PSI09 <span className="divider">/</span> Python + pytest <ArrowRight size={12}/></span></footer>
-    </main></div></div></MotionConfig>
+  const passed = result?.accepted
+    ? result.after.passing.length
+    : before?.passing.length;
+  const failed = result?.accepted
+    ? result.after.failing.length
+    : before?.failing.length;
+  return (
+    <MotionConfig reducedMotion="user">
+      <div className="app-shell">
+        <aside className="rail">
+          <a href="#" className="brand-icon" aria-label="Sentinel home">
+            <ShieldCheck size={23} />
+          </a>
+          <div className="rail-line" />
+          <a
+            href="#workspace"
+            className="rail-item selected"
+            aria-label="Workspace"
+          >
+            <Code2 size={21} />
+          </a>
+          <a
+            href="#evidence"
+            className="rail-item"
+            aria-label="Verification evidence"
+          >
+            <Activity size={20} />
+          </a>
+          <a href="#how" className="rail-item" aria-label="How it works">
+            <GitBranch size={20} />
+          </a>
+          <span className="rail-bottom">
+            S<span className="online-dot" />
+          </span>
+        </aside>
+        <div className="main">
+          <header>
+            <div className="wordmark">
+              sentinel<span className="slash">/</span>
+              <span className="header-label">Engineering workspace</span>
+            </div>
+            <div className="header-right">
+              <span className="version">HACKNEX ’26</span>
+              <span className="avatar">HN</span>
+            </div>
+          </header>
+          <main>
+            <section className="intro">
+              <div>
+                <div className="eyebrow">
+                  <span className="lime-dot" /> SAFE AI SOFTWARE ENGINEERING
+                </div>
+                <h1>
+                  Better code. <span>Zero regressions.</span>
+                </h1>
+                <p>Let AI make the change. Let your tests decide what stays.</p>
+              </div>
+              <div className="intro-tag">
+                <ShieldCheck size={16} /> Evidence over promises
+              </div>
+            </section>
+            <div className="mode-banner">
+              <div className="mode-copy">
+                <span className="banner-icon">
+                  <Terminal size={17} />
+                </span>
+                <strong>
+                  {config?.mode === "live"
+                    ? "Live AI mode"
+                    : config
+                      ? "Offline demo mode"
+                      : "Connecting to runner"}
+                </strong>
+                <span>
+                  {config?.mode === "live"
+                    ? "Gemini proposes. Pytest verifies."
+                    : config
+                      ? "Recorded fixes. Real tests. No live AI calls."
+                      : "Checking backend availability…"}
+                </span>
+              </div>
+              <span className="mode-pill">{config?.model || "Connecting"}</span>
+            </div>
+            <section id="how" className="workflow" aria-label="How it works">
+              {[
+                "Run tests",
+                "Ask AI",
+                "Apply to copy",
+                "Re-test",
+                "Keep or revert",
+              ].map((s, i) => (
+                <React.Fragment key={s}>
+                  <div>
+                    <span
+                      className={
+                        busy && i === 1 ? "step-num active" : "step-num"
+                      }
+                    >
+                      {String(i + 1).padStart(2, "0")}
+                    </span>
+                    <span>{s}</span>
+                    {i === 4 && <ShieldCheck size={15} className="lime" />}
+                  </div>
+                  {i < 4 && (
+                    <ChevronRight className="workflow-arrow" size={15} />
+                  )}
+                </React.Fragment>
+              ))}
+            </section>
+            <div id="workspace" className="workspace">
+              <section className="panel project-panel">
+                <div className="panel-title">
+                  <div>
+                    <span className="tiny-square" /> Project workspace
+                  </div>
+                  <span className="muted mono">01</span>
+                </div>
+                <div className="project-picker">
+                  <label htmlFor="project">DEMO PROJECT</label>
+                  <select
+                    id="project"
+                    disabled={busy}
+                    value={demoId}
+                    onChange={(e) => reset(e.target.value)}
+                  >
+                    {demos.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p>{demo.description}</p>
+                </div>
+                <div className="editor">
+                  <div
+                    className="file-tabs"
+                    role="tablist"
+                    aria-label="Project files"
+                  >
+                    {Object.keys(files).map((p) => (
+                      <button
+                        role="tab"
+                        aria-selected={active === p}
+                        disabled={busy}
+                        className={
+                          active === p ? "file-tab active" : "file-tab"
+                        }
+                        key={p}
+                        onClick={() => setActive(p)}
+                      >
+                        <FileCode2 size={13} />
+                        {p}
+                      </button>
+                    ))}
+                    <button
+                      disabled={busy}
+                      className="add-file"
+                      aria-label="Add Python file"
+                      onClick={() => setAdding(!adding)}
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </div>
+                  {adding && (
+                    <form
+                      className="add-row"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        addFile();
+                      }}
+                    >
+                      <input
+                        aria-label="New Python filename"
+                        placeholder="helpers.py"
+                        value={newFile}
+                        onChange={(e) => setNewFile(e.target.value)}
+                      />
+                      <button type="submit">Add</button>
+                    </form>
+                  )}
+                  <div className="editor-body">
+                    <div className="line-numbers" aria-hidden="true">
+                      {files[active]?.split("\n").map((_, i) => (
+                        <span key={i}>{i + 1}</span>
+                      ))}
+                    </div>
+                    <textarea
+                      aria-label={`Edit ${active}`}
+                      className="code-input"
+                      spellCheck={false}
+                      disabled={busy}
+                      value={files[active] || ""}
+                      onChange={(e) => {
+                        setFiles({ ...files, [active]: e.target.value });
+                        invalidateEvidence();
+                      }}
+                    />
+                  </div>
+                  <div className="editor-footer">
+                    <span>
+                      <span className="python-dot" /> Python
+                    </span>
+                    <span>
+                      UTF-8 <span className="divider">|</span>{" "}
+                      {Object.keys(files).length} files
+                    </span>
+                  </div>
+                </div>
+                <div className="task-input">
+                  <label htmlFor="task">
+                    <Sparkles size={14} /> WHAT SHOULD THE AGENT DO?
+                  </label>
+                  <textarea
+                    id="task"
+                    disabled={busy}
+                    value={task}
+                    onChange={(e) => {
+                      setTask(e.target.value);
+                      invalidateEvidence();
+                    }}
+                  />
+                  <div className="run-row">
+                    <span>
+                      <LockKeyhole size={12} /> Existing tests protected
+                    </span>
+                    <button
+                      className="run-button"
+                      onClick={run}
+                      disabled={busy || !task.trim() || !config}
+                    >
+                      {busy ? (
+                        <LoaderCircle size={15} className="spin" />
+                      ) : (
+                        <Play size={14} fill="currentColor" />
+                      )}
+                      {busy ? "Verifying…" : "Run agent"}
+                      {!busy && <span className="key-hint">↵</span>}
+                    </button>
+                  </div>
+                </div>
+              </section>
+              <section className="panel execution-panel">
+                <div className="panel-title">
+                  <div>
+                    <Activity size={16} /> Agent observer
+                  </div>
+                  <span
+                    className={
+                      "status-badge " +
+                      (busy ? "running" : result?.accepted ? "success" : "")
+                    }
+                  >
+                    {busy
+                      ? "RUNNING"
+                      : result?.accepted
+                        ? "VERIFIED"
+                        : done
+                          ? "COMPLETE"
+                          : "READY"}
+                  </span>
+                </div>
+                <div className="observer-heading">
+                  <div className="observer-orb">
+                    <ShieldCheck size={26} />
+                  </div>
+                  <div>
+                    <h2>
+                      {result?.accepted
+                        ? "A safer change, verified."
+                        : busy
+                          ? "Working toward a safe fix."
+                          : "Every change earns its place."}
+                    </h2>
+                    <p>
+                      {result?.accepted
+                        ? "Your passing tests stayed passing."
+                        : busy
+                          ? "Follow each decision as it happens."
+                          : "The agent proposes. The verification gate decides."}
+                    </p>
+                  </div>
+                </div>
+                <div className="metrics">
+                  <div>
+                    <span>PASSING</span>
+                    <strong className={passed !== undefined ? "lime" : ""}>
+                      {passed ?? "—"}
+                      <small>
+                        {before && result?.accepted
+                          ? ` / ${before.passing.length + before.failing.length}`
+                          : ""}
+                      </small>
+                    </strong>
+                  </div>
+                  <div>
+                    <span>FAILING</span>
+                    <strong className={failed ? "red" : ""}>
+                      {failed ?? "—"}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>REGRESSIONS</span>
+                    <strong>{result ? result.regressions.length : "—"}</strong>
+                  </div>
+                </div>
+                <div className="timeline-label">
+                  <span>EXECUTION TIMELINE</span>
+                  <span className="mono">{attempts.length} / 3 attempts</span>
+                </div>
+                <div className="timeline" aria-live="polite">
+                  {entries.length ? (
+                    entries.map((e, i) => (
+                      <motion.div
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className={"timeline-entry " + e.state}
+                        key={i}
+                      >
+                        <span className="timeline-dot">
+                          {e.state === "working" ? (
+                            <LoaderCircle size={13} className="spin" />
+                          ) : e.state === "ok" ? (
+                            <Check size={13} />
+                          ) : (
+                            <X size={13} />
+                          )}
+                        </span>
+                        <div>
+                          <h3>{e.title}</h3>
+                          <p>{e.detail}</p>
+                        </div>
+                      </motion.div>
+                    ))
+                  ) : (
+                    <>
+                      <div className="timeline-entry">
+                        <span className="timeline-dot">
+                          <Circle size={11} />
+                        </span>
+                        <div>
+                          <h3>Waiting for your first run</h3>
+                          <p>
+                            Select a project, review the task, and run the
+                            agent.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="empty-terminal">
+                        <span className="terminal-prompt">❯</span> ready to
+                        verify
+                        <span className="cursor" />
+                        <div>Test results will appear here.</div>
+                      </div>
+                    </>
+                  )}
+                </div>
+                <div className="gate-note">
+                  <ShieldCheck size={16} />
+                  <span>
+                    Keep only if failures decrease and no passing test
+                    regresses.
+                  </span>
+                </div>
+              </section>
+            </div>
+            {error && (
+              <div className="error-banner" role="alert">
+                <X size={17} />
+                {error}
+                <button onClick={() => setError("")} aria-label="Dismiss error">
+                  <X size={15} />
+                </button>
+              </div>
+            )}
+            <section id="evidence" className="panel evidence">
+              <div className="panel-title">
+                <div>
+                  <GitBranch size={16} /> Verification evidence{" "}
+                  <span className="subtle-pill">
+                    {result
+                      ? result.files_changed.length + " files changed"
+                      : "No changes yet"}
+                  </span>
+                </div>
+                <div className="evidence-actions">
+                  <button disabled={busy} onClick={() => reset()}>
+                    <RotateCcw size={13} />
+                    <span>Reset demo</span>
+                  </button>
+                  <button
+                    disabled={!done || !before || busy}
+                    onClick={download}
+                  >
+                    <Download size={14} />
+                    <span>Export report</span>
+                  </button>
+                </div>
+              </div>
+              <div className="evidence-tabs">
+                {(["diff", "explanation", "logs"] as const).map((t) => (
+                  <button
+                    key={t}
+                    className={tab === t ? "active" : ""}
+                    onClick={() => setTab(t)}
+                  >
+                    {t === "diff"
+                      ? "Code diff"
+                      : t === "explanation"
+                        ? "Root cause"
+                        : "Test output"}
+                  </button>
+                ))}
+                <span>
+                  {result?.accepted ? (
+                    <>
+                      <span className="lime-dot" /> Change accepted
+                    </>
+                  ) : result ? (
+                    "Candidate discarded"
+                  ) : (
+                    "Awaiting verification"
+                  )}
+                </span>
+              </div>
+              {tab === "diff" ? (
+                result?.diff ? (
+                  <pre className="diff">
+                    {result.diff.split("\n").map((l, i) => (
+                      <span
+                        key={i}
+                        className={
+                          l.startsWith("+")
+                            ? "added"
+                            : l.startsWith("-")
+                              ? "removed"
+                              : l.startsWith("@@")
+                                ? "hunk"
+                                : ""
+                        }
+                      >
+                        {l || " "}
+                      </span>
+                    ))}
+                  </pre>
+                ) : (
+                  <div className="evidence-empty">
+                    <div className="diff-symbol">
+                      <span>−</span>
+                      <span>+</span>
+                    </div>
+                    <div>
+                      <h3>A clear record of every change.</h3>
+                      <p>
+                        Run the agent to see the diff, root cause, and test
+                        evidence.
+                      </p>
+                    </div>
+                    <ArrowUpRight size={21} />
+                  </div>
+                )
+              ) : tab === "explanation" ? (
+                <div className="explanation">
+                  <h3>
+                    {proposal
+                      ? "Why this change?"
+                      : "Understand the fix, not just the code."}
+                  </h3>
+                  <p>
+                    {proposal?.explanation ||
+                      "The verified proposal will include a plain-English explanation of the root cause."}
+                  </p>
+                  {result && <p className="muted">{result.reason}</p>}
+                </div>
+              ) : (
+                <pre className="logs">
+                  {result?.after.output ||
+                    before?.output ||
+                    "No test output yet. Run the agent to execute pytest."}
+                </pre>
+              )}
+            </section>
+            <footer>
+              <span>
+                <ShieldCheck size={13} /> Built to verify. Designed to explain.
+              </span>
+              <span>
+                HNX26PSI09 <span className="divider">/</span> Python + pytest{" "}
+                <ArrowRight size={12} />
+              </span>
+            </footer>
+          </main>
+        </div>
+      </div>
+    </MotionConfig>
+  );
 }
-createRoot(document.getElementById('root')!).render(<React.StrictMode><App/></React.StrictMode>);
+createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+);
