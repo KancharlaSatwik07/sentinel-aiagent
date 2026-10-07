@@ -1,24 +1,30 @@
 import json
 from http.server import BaseHTTPRequestHandler
 from agent.core import run_tests, verify
-from agent.model import propose, status
+from agent.github import import_github
+from agent.model import check_openrouter, propose, status
 
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
-        pass  # Never log submitted source or provider data.
+        pass  # Never log submitted source, repository data, or provider information.
 
     def reply(self, code, data):
-        body = json.dumps(data).encode()
+        body = json.dumps(data, ensure_ascii=False).encode('utf-8')
         self.send_response(code)
-        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Content-Length', str(len(body)))
         self.send_header('Cache-Control', 'no-store')
         self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('X-Frame-Options', 'DENY')
+        self.send_header('Referrer-Policy', 'no-referrer')
         self.end_headers()
         self.wfile.write(body)
 
     def do_GET(self):
-        self.reply(200, status()) if self.path.split('?')[0] == '/api/status' else self.reply(404, {'error':'Not found'})
+        if self.path.split('?')[0] == '/api/status':
+            return self.reply(200, status())
+        self.reply(404, {'error': 'Not found'})
 
     def do_POST(self):
         try:
@@ -35,10 +41,14 @@ class Handler(BaseHTTPRequestHandler):
                 result = propose(payload)
             elif path == '/api/verify':
                 result = verify(payload.get('files'), payload.get('edits'), payload.get('baseline'))
+            elif path == '/api/openrouter-check':
+                result = check_openrouter()
+            elif path == '/api/import-github':
+                result = import_github(payload.get('url'))
             else:
-                return self.reply(404, {'error':'Not found'})
+                return self.reply(404, {'error': 'Not found'})
             self.reply(200, result)
         except (ValueError, TypeError, KeyError) as exc:
-            self.reply(400, {'error':str(exc)})
+            self.reply(400, {'error': str(exc)})
         except Exception:
-            self.reply(500, {'error':'The request could not finish. No changes were kept.'})
+            self.reply(500, {'error': 'The request could not finish. No changes were kept.'})

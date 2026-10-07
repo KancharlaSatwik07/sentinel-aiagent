@@ -1,11 +1,14 @@
-# Verification results · 7 October 2026
+# Test and verification record
 
-- Backend suite: **28 passed** (pytest).
-- TypeScript check and Vite production build: **passed**.
-- Offline E2E: Shop cart **3/2 → 5/0**; cart/remove **3/3 → 6/0**; string utilities **4/1 → 5/0**. All accepted with **0 regressions**.
-- Browser: cart and string workflows visibly reached **Attempt 1 · accepted**, with real baseline counts, final 5/0 counts, and correct unified diffs.
-- Mobile breakpoint: inspected at 390 × 844; no automated responsive assertions. Download-report browser event could not be confirmed because browser automation timed out. Report generation is implemented.
-- Build emits benign Motion `use client` directive warnings; no type/build failure.
-- Real Gemini API: **not tested**, no GEMINI_API_KEY available. Retry and 404 discovery covered with mock clients.
-- Public deploy: **blocked by login**. Vercel dashboard redirected to login; GitHub new repository page redirected to login. No public URL or public repository claimed.
-- Arbitrary untrusted code sandbox: **not implemented**. Public demo uses exact reviewed snapshots only; custom code requires trusted-local opt-in.
+Run locally:
+
+```sh
+npm test
+npm run build
+```
+
+The Python suite covers path/size validation, protected tests, fail-closed execution, safe syntax-only baselines without pytest, exact syntax diagnostics, testless repair acceptance only with new passing regressions, prompt requirements for uncovered behavior, subprocess credential isolation, OpenRouter request/auth, free-model discovery/fallback, and bounded mocked GitHub imports. The current suite has **41 passing tests**.
+
+On 2026-10-07, the TypeScript check/Vite production build succeeded. The live OpenRouter health endpoint returned HTTP 200 using `openrouter/free`. A testless synthetic `add` bug produced a root-cause explanation, a one-file source fix, and three new pytest regression cases from a live free model; all three passed verification, and the candidate was accepted. Never paste an API key into source code or commit `.env`.
+
+A live GitHub import was attempted, but this execution environment could not connect to GitHub. The importer is covered by mocked API tests for filtering, limits, and URL validation; retry a public repository URL from the running local app if network access is available.

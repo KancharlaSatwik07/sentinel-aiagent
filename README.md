@@ -1,111 +1,73 @@
-# Sentinel · Safe AI Software Engineering Agent
+# Sentinel — Safe AI Engineering Workspace
 
-HNX26PSI09 · Karunya HACKNEX ’26. An evidence-first coding workspace: **never trade one bug for another.**
+A Python code-review workspace that imports source, runs pytest evidence locally, asks OpenRouter for a focused repair, and keeps a proposed change only after tests pass without losing previously passing tests.
 
-## What it does
-Give a small Python project and a task to the agent. It records actual pytest results, proposes minimal source edits, verifies a candidate copy, and keeps it only when failures decrease (or all tests pass) without losing a previously passing test. Three attempts maximum. The browser retains the original files until verification accepts a candidate.
+## Features
 
-## How it works
-1. Run pytest; record the passing and failing node IDs, skipped tests, collection errors, and raw output.
-2. Include all non-test source below 30,000 characters; otherwise ask Gemini to select at most six files using paths, task, and failure output.
-3. Request JSON `{ "explanation": "…", "edits": [{ "file": "relative.py", "content": "full content" }] }`.
-4. Validate relative Python paths, content limits, and edit shape. Existing tests are immutable; new test files are permitted by validation.
-5. Apply to a temporary candidate copy and run pytest with an eight-second timeout.
-6. Accept only with zero regressions, no missing baseline tests, valid collection, and fewer failures or all passing. Otherwise discard and send feedback; retry up to three times.
-7. Show a timeline, root cause, before/after counts, unified diff, and downloadable Markdown evidence including each attempt.
-8. If no safe fix is found, retain the original code and say so.
+- Clean, editable Python workspace with browser-local persistence; no faulty demo or seeded failing test.
+- Import public GitHub repositories by URL; only bounded UTF-8 `.py` files are fetched (maximum 50 files / 200 KB). No repository is cloned or executed automatically.
+- Server-only OpenRouter API key and an explicit live connection test.
+- Safe Python syntax diagnostics when no pytest suite exists; repairs add meaningful pytest regression tests and are accepted only after passing verification. Existing tests stay protected; test execution is local-only and gated; path/size limits, regression-aware acceptance, three proposal attempts, reviewable diffs, and Markdown evidence export.
+- Hosted code execution is always blocked. Custom code testing is an explicit local opt-in and runs with the local user's OS permissions; it is **not** a security sandbox.
 
-```text
-Original files → Baseline → Proposal → Validate → Candidate tests
-                              ↑                       │
-                              └── reject + feedback ──┤
-                                                      └─ accept → Keep + report
-```
+## Run locally
 
-## Live demo URL
-Deployment is being connected to https://github.com/KancharlaSatwik07/hacknex-aiagent. See [deployment instructions](docs/DEPLOY.md). The project ZIP contains source, lockfiles, tests and documentation.
-
-## Tech stack and models
-React + TypeScript + Vite, custom CSS, Motion for timeline transitions, Lucide icons. Python serverless handlers, pytest, official `google-genai` client. No database or login. Gemini default: `gemini-flash-latest`; fallback: `models/gemini-3.7-flash`, as requested in the brief. These names are configuration defaults, not a claim of model availability. On 404, list available models and choose a Flash model supporting `generateContent`.
-
-429/503 responses retry after 0, 3, and 8 seconds per model, then fallback. JSON parsing handles fences and retries malformed proposals. Provider errors are sanitized. Provider retries share a 48-second soft deadline with six-second per-call timeouts and SDK automatic retries disabled; frontend reports failure without accepting changes. Model listing or network overhead may still exceed host limits. Propose is configured for 60 seconds; older host plans may require reducing retries or an asynchronous queue.
-
-## Declared resources
-- Gemini API and official Google Gen AI Python SDK (`google-genai`), only when a server-side key is configured.
-- pytest; Python standard library (`subprocess`, `http.server`, `tempfile`, `difflib`, `json`, `pathlib`).
-- React, React DOM, Motion, Lucide React; TypeScript and Vite; React type declarations. Exact direct versions are in package.json; resolved dependencies in package-lock.json. Python resolved dependencies are in requirements-lock.txt.
-- Google Fonts: DM Sans and IBM Plex Mono, loaded through CSS, with local system fallbacks.
-- Vercel Python Functions / GitHub as intended hosting and source providers, not connected in this session.
-- Design references: [Anime.js](https://animejs.com), [Motion](https://motion.dev), [Kokonut UI](https://kokonutui.pro), [Bklit](https://bklit.com), [shadcn/ui](https://ui.shadcn.com). Original implementation; no paid component source copied. Only Motion is installed from these references.
-- OpenAI Codex was used to write and test the implementation. Offline fixes are recorded demonstration data, not model inference.
-
-## Install and run locally
-Node 22.12+ (or compatible later LTS), Python 3.10+.
+Requirements: Node.js 22+ and Python 3.10+.
 
 ```sh
 npm ci
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-lock.txt
+cp .env.example .env
+# Put OPENROUTER_API_KEY in .env on the API server only.
+# Set ALLOW_TRUSTED_CODE=1 only when you trust all code you plan to run.
 .venv/bin/python scripts/server.py
 ```
-In a second terminal, `npm run dev`, then open the printed localhost URL. The Vite proxy forwards `/api` to port 8000. The Python server deliberately binds only to loopback.
+
+In a second terminal:
 
 ```sh
-npm run build
-.venv/bin/python -m pytest tests -q
+npm run dev
 ```
 
-## Environment variables
-Set variables in the terminal that starts the Python server, or the host environment. `.env.example` is a template; local Python does not automatically load `.env`.
+Open the local URL printed by Vite. The Python server binds to `127.0.0.1:8000`; Vite proxies `/api` to that address. `.env` is ignored by Git and never delivered to the browser. Restart the server after changing environment values.
 
-| Variable | Default | Purpose |
-|---|---|---|
-| GEMINI_API_KEY | absent | Server-only key. Missing key means explicitly labeled offline mode. |
-| GEMINI_MODEL | gemini-flash-latest | Primary model; availability checked by API. |
-| GEMINI_FALLBACK_MODEL | models/gemini-3.7-flash | Fallback before discovery. |
-| ALLOW_TRUSTED_CODE | 0 | Set to 1 **locally only** for custom trusted code; ignored on Vercel. |
+Run checks:
 
-Never use `VITE_` for the API key. Never commit secrets. They are not sent to the browser or inherited by test processes.
+```sh
+npm test
+npm run build
+```
 
-## How to reproduce the demo results
-Leave GEMINI_API_KEY unset. Select each project, click Run agent, and export the report. Reset before another run.
+## OpenRouter setup and live check
 
-| Demo | Baseline | Accepted result | Regressions |
-|---|---|---|---|
-| Shop cart | 3 passing / 2 failing | 5 passing / 0 failing | 0 |
-| Shop cart · add a feature | 3 passing / 3 failing | 6 passing / 0 failing | 0 |
-| String utilities | 4 passing / 1 failing | 5 passing / 0 failing | 0 |
+Set `OPENROUTER_API_KEY` in the server environment or ignored local `.env`. The browser only receives configuration status and the model name. Click **Test connection** to send a small server-side chat-completions request; the token never reaches the browser. `OPENROUTER_MODEL` defaults to `openrouter/free`, which automatically selects an available free model. Free model availability and rate limits can change; an optional `OPENROUTER_FALLBACK_MODEL` must be a free model ID. Public hosting blocks model calls unless `ENABLE_PUBLIC_AI=1`; do not turn that on without authentication, rate limits, abuse monitoring, and spending controls.
 
-Offline mode requires the exact original files **and task**; it does not pretend to understand arbitrary requests. Counts come from real pytest subprocesses, not hardcoded UI results. The expected numbers in demo data are only fixtures for automated tests.
+Never commit credentials or place them in a `VITE_` variable. If an API key was pasted into a chat or shared log, revoke it in [OpenRouter key settings](https://openrouter.ai/settings/keys) and replace the local environment value.
 
-## Sample input and output
-Input: Shop cart project, task “Fix the failing tests. Keep the existing cart behavior and make the smallest safe change.”
-Output: 3/2 → 5/0, accepted, zero regressions. Root cause: add overwrote the previous quantity and total added instead of subtracting the discount. Changed file: cart.py. The report contains the full unified diff.
+Provider references: [OpenRouter quickstart](https://openrouter.ai/docs/quickstart) and [Free Models Router](https://openrouter.ai/docs/cookbook/get-started/free-models-router-playground). The router uses the `openrouter/free` model ID and can select among free models that support the request's features.
 
-## Safety features
-- Max 50 Python files / 200,000 UTF-8 bytes; bounded HTTP body and returned logs.
-- Relative path validation, duplicate-edit rejection, protected existing tests, no new conftest.py hooks.
-- Temporary directories only under `/tmp`; no shell=True; eight-second subprocess timeout; pytest cache disabled.
-- Child environment excludes provider credentials and disables automatic pytest plugin loading.
-- Verify recomputes the original baseline server-side so browser-supplied counts cannot forge acceptance. This means two runs per verify request, potentially up to 16 seconds plus overhead, rather than a strict ten-second endpoint.
-- Default execution accepts **only exact bundled original or reviewed-fixed snapshots**. Arbitrary generated code is rejected on public hosting. Merely using subprocess is not isolation.
-- No network sandbox, container isolation, authentication, rate limiting, or adversarial-code guarantee. Trusted local custom execution has the privileges of your user and must never process unknown code. Do not expose that local server.
+When you request a repair, the selected provider receives the task description, source files, test source, and bounded test output. Remove API keys, passwords, private customer data, and other secrets before importing or submitting code. Free-model routing and quotas can change over time.
 
-## Scope note
-**MVP built:** three demo variants across two codebases; editable project files and tasks; add Python file; real pytest baseline/verification; Gemini integration; offline mode; three-attempt browser loop; reviewable diff/root cause; evidence export; responsive keyboard-accessible UI; reduced motion; regression and validation tests; Vercel configuration.
+## Importing projects
 
-**Not built:** isolated arbitrary-code execution service, automatic test generation, non-Python support, large-repository semantic search, persistent history, uploads, production authentication/rate limiting. On public hosting Gemini selects and explains a reviewed demo repair; executable content must exactly match that approved snapshot. General live repair is a trusted-local capability until a real sandbox is integrated. Test success is evidence, not proof of universal correctness.
+Paste a public repository root URL such as `https://github.com/owner/repository`. The importer reads the repository's default branch through the GitHub API, keeps regular Python source/test files, and rejects private repositories, non-GitHub hosts, oversized or truncated projects, and excessive file counts. It does not import binary assets or clone Git history. Add individual Python files from the editor when needed.
 
-## Limitations
-Public hosting and real-key model integration were not verified in this session. No API key was available. Automated tests cover model retry/discovery with mocks. Hidden tests are not known; unchanged visible test files cannot prove hidden correctness. Ordinary feature requests for a suite that already fully passes are intentionally short-circuited as “No repair needed”; add a failing feature test first. Network denial is not implemented; public execution is restricted to reviewed snapshots. Browser state is lost on reload. Code editor is a lightweight textarea, not a full IDE.
+**Review imported code before testing it.** Python tests and package hooks can execute arbitrary code. The local runner is intentionally disabled by default; enable `ALLOW_TRUSTED_CODE=1` only for source you control and trust. Do not expose the loopback server to the internet. Hosted/Vercel functions refuse code execution regardless of this setting.
 
-## Assumptions
-- Your explicit Vercel/Python architecture takes priority over Sites hosting.
-- React/Vite is the fastest suitable frontend; custom CSS keeps the design small without installing several overlapping UI libraries.
-- Security takes precedence over accepting untrusted Python in an unsandboxed public function.
-- Skipped or missing baseline tests count against acceptance, including previously failing tests becoming skipped.
-- Three attempts are counted even if the provider returns an error.
-- Built-in tests are editable before a baseline but protected from the repair agent afterward; modified demos need trusted-local execution.
+## API endpoints
 
-## Team placeholder
-Team name: ______ · Members and roles: ______ · Institution: Karunya · Problem: HNX26PSI09.
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/status` | Reports non-secret OpenRouter configuration and local execution availability. |
+| `POST /api/openrouter-check` | Makes a small live OpenRouter request server-side. |
+| `POST /api/import-github` | Imports bounded Python files from a public repository. |
+| `POST /api/baseline` | Runs pytest only when explicitly enabled on localhost. |
+| `POST /api/propose` | Requests a source-only OpenRouter repair. |
+| `POST /api/verify` | Recomputes baseline and candidate test evidence before accepting edits. |
+
+## Deployment and security boundary
+
+`npm run build` emits the Vite frontend to `dist`; Python handlers are under `api/`. Vercel can serve the frontend and API shape, but **hosted test execution is deliberately unavailable** until a real isolated execution service is integrated. Do not enable public AI requests without authentication, abuse controls, and a budget policy; the browser must never contain the provider key. Public repository import is read-only, but serverless provider quotas still apply. Review `docs/DEPLOY.md` before publishing.
+
+This project has no login, database, isolated execution service, persistent server-side project storage, or abuse-rate-limit service. Those are production deployment requirements for shared/public use. Local browser persistence is per browser profile. Passing tests provide evidence for the tested suite, not proof of universal correctness.

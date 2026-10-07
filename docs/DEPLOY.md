@@ -1,24 +1,25 @@
-# Publish on GitHub and Vercel Hobby
+# Deployment and operations
 
-No deployment was performed because authenticated GitHub/Vercel tooling was unavailable. No host runtime incompatibility has been observed, so switching hosts would not resolve the login requirement.
+## Local development
 
-1. Sign into GitHub. Create a **public**, empty repository named `hacknex-psi09-agent-web`. Do not initialize another README.
-2. From this project, run (substitute your GitHub username):
-   ```sh
-   git branch -M main
-   git remote add origin https://github.com/YOUR_USERNAME/hacknex-psi09-agent-web.git
-   git push -u origin main
-   ```
-   If starting from the ZIP with no Git history: `git init`, `git add .`, `git commit -m "Build Sentinel agent workspace"`, then the commands above. `.gitignore` excludes secrets.
-3. Sign into Vercel, choose a personal **Hobby** account, Add New → Project → import that repository.
-4. Framework: Vite. Build: `npm run build`. Output: `dist`. Leave root at the repository root. Python functions live under `/api`. Use a supported Python 3.12 runtime if configurable.
-5. For offline demo, leave GEMINI_API_KEY absent. Click Deploy. Copy the resulting public production URL into README.md.
-6. Open it, verify the banner says **Offline demo mode**, select Shop cart, click Run agent. Expect 3 passing / 2 failing → 5 passing / 0 failing, zero regressions. Test String utilities: 4/1 → 5/0. Export the report.
-7. To enable live proposals: **Vercel dashboard → project → Settings → Environment Variables → Add Environment Variable**. Name `GEMINI_API_KEY`; value your Gemini key; select Production (and Preview only if desired). Save. Add `GEMINI_MODEL=gemini-flash-latest` and `GEMINI_FALLBACK_MODEL=models/gemini-3.7-flash` or current available Flash IDs. Then **Deployments → latest deployment → … → Redeploy**. Never put the key into frontend code, chat, or a VITE_ variable.
-8. Public execution intentionally remains demo-allowlisted. General live repair needs a true isolated execution service; setting the key does not make arbitrary execution safe. Do not enable ALLOW_TRUSTED_CODE on a public server.
+1. Install Node.js 22+ and Python 3.10+.
+2. Run `npm ci` and `.venv/bin/pip install -r requirements-lock.txt` after creating a virtual environment.
+3. Copy `.env.example` to `.env`, set the server-only OpenRouter key, use `OPENROUTER_MODEL=openrouter/free` for automatic free-model routing, and leave `ALLOW_TRUSTED_CODE=0` unless you intentionally test source you trust.
+4. Run `.venv/bin/python scripts/server.py` and `npm run dev` in separate terminals. The API binds only to loopback.
+5. Validate with `npm test` and `npm run build`.
 
-## Local live AI verification
-Export your key in your own terminal without saving it in source. Export `ALLOW_TRUSTED_CODE=1` only for trusted local inputs; start the loopback API. Run each demo through the UI and inspect actual results. Live AI fixes need not match the offline recorded fix, so results are not promised in advance.
+The `.env` file is ignored by Git. Restart the Python process after changing it. Do not put a secret in frontend environment variables or source files.
 
-## If Vercel Python packaging fails
-Read build logs first: ensure `requirements.txt`, `agent/`, and `data/demos.json` are included. Server functions must import `agent.http`; their working directory must contain the project package. The project includes a 60-second function configuration; use the maximum your free plan supports. A tested deployment is required before claiming a live URL. Netlify and Hugging Face also require account access and platform-specific packaging; those adapters are not implemented or claimed tested here.
+## Vercel
+
+The repo contains Vite output configuration and Python function entry points under `api/`. Configure `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` in Vercel's server-side project environment and deploy a preview first. Vercel does not run this project's test runner: hosted execution is rejected in all cases because subprocess execution is not a security boundary. Run frontend build and Python unit tests before promoting a deployment.
+
+Hosted OpenRouter requests are disabled unless `ENABLE_PUBLIC_AI=1`. Do not enable that flag publicly without authentication, reliable rate limiting, abuse monitoring, and spending controls. `openrouter/free` selects from the available free model pool; availability and rate limits vary, so this is suitable for experiments and low-volume use rather than a reliability guarantee. Public GitHub import is read-only but unauthenticated GitHub API quotas apply. The current project intentionally has no shared-user authentication or persistence, so treat any deployment as a preview until these controls are added.
+
+## GitHub import behavior
+
+The import endpoint accepts only `https://github.com/owner/repository` and `.git` root URLs. It uses the default branch, fetches regular `.py` files only, ignores hidden/vendor/build folders and symlinks, and rejects truncated trees, more than 50 files, or more than 200 KB of Python content. It does not run imported content. Git history, private repositories, submodules, and GitHub Enterprise are not supported.
+
+## Execution security
+
+The local runner executes code with the permissions of the local OS user. The opt-in is a trust acknowledgement, **not isolation**. Never expose the local API server on a public interface or run untrusted code. Hosted execution remains fail-closed even if `ALLOW_TRUSTED_CODE=1`; production remote execution requires an independently isolated, resource-limited sandbox and authenticated access.

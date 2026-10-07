@@ -2,6 +2,6 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {
-    "api/*.py": { "maxDuration": 60, "includeFiles": "{agent/**,data/**}" }
+    "api/*.py": { "maxDuration": 60, "includeFiles": "{agent/**}" }
   }
 }

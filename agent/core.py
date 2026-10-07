@@ -1,5 +1,6 @@
-"""Validation and real pytest evidence; no shell commands or persistent projects."""
+"""Bounded project validation and pytest evidence collection."""
 import difflib
+import ast
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -7,8 +8,8 @@ import subprocess
 import sys
 import tempfile
 
-DEMOS = json.loads((Path(__file__).resolve().parent.parent / 'data/demos.json').read_text())
 MAX_BYTES = 200_000
+MAX_FILES = 50
 
 
 def test_file(path: str) -> bool:
@@ -25,14 +26,14 @@ def valid_path(path: str) -> None:
 
 
 def validate_files(files: dict) -> None:
-    if not isinstance(files, dict) or not 1 <= len(files) <= 50:
-        raise ValueError('Provide between 1 and 50 Python files.')
+    if not isinstance(files, dict) or not 1 <= len(files) <= MAX_FILES:
+        raise ValueError(f'Provide between 1 and {MAX_FILES} Python files.')
     size = 0
     for path, content in files.items():
         valid_path(path)
         if not isinstance(content, str):
             raise ValueError('File content must be text.')
-        size += len(content.encode())
+        size += len(content.encode('utf-8'))
     if size > MAX_BYTES:
         raise ValueError('Project exceeds the 200 KB limit.')
     for path in files:
@@ -55,7 +56,7 @@ def parse_proposal(text: str) -> dict:
 
 def apply_edits(files: dict, edits: list) -> dict:
     validate_files(files)
-    if not isinstance(edits, list) or not 1 <= len(edits) <= 50:
+    if not isinstance(edits, list) or not 1 <= len(edits) <= MAX_FILES:
         raise ValueError('The proposal must contain 1–50 edits.')
     candidate = dict(files)
     seen = set()
@@ -71,20 +72,18 @@ def apply_edits(files: dict, edits: list) -> dict:
             raise ValueError('Existing test files are protected.')
         if PurePosixPath(path).name == 'conftest.py':
             raise ValueError('Adding pytest configuration hooks is not allowed.')
+        if not isinstance(edit['content'], str):
+            raise ValueError('File content must be text.')
         candidate[path] = edit['content']
     validate_files(candidate)
     return candidate
 
 
 def ensure_execution_allowed(files: dict) -> None:
-    # A subprocess is NOT a security boundary. Public hosting accepts only exact
-    # reviewed demo snapshots; arbitrary code is an explicit local opt-in.
-    for demo in DEMOS:
-        if files == demo['files'] or files == {**demo['files'], **demo['fixed']}:
-            return
-    if os.getenv('ALLOW_TRUSTED_CODE') == '1' and not os.getenv('VERCEL'):
-        return
-    raise ValueError('Hosted demo safety: only unmodified built-in projects and reviewed fixes may execute. Run locally with ALLOW_TRUSTED_CODE=1 for trusted custom code.')
+    """Never execute user source on hosted functions; local execution is opt-in."""
+    validate_files(files)
+    if os.getenv('VERCEL') or os.getenv('ALLOW_TRUSTED_CODE') != '1':
+        raise ValueError('Code execution is disabled. Run the local server with ALLOW_TRUSTED_CODE=1 only for code you trust; hosted execution requires an isolated sandbox.')
 
 
 RUNNER = '''import json, pathlib, sys, pytest
@@ -111,6 +110,29 @@ pathlib.Path(sys.argv[1]).write_text(json.dumps({"states":e.states,"errors":e.er
 
 def run_tests(files: dict) -> dict:
     validate_files(files)
+    test_files = sorted(path for path in files if test_file(path))
+    if not test_files:
+        passing = []
+        failing = []
+        diagnostics = ['No pytest files found. Running Python syntax checks only; describe the expected behavior and the AI will add regression tests with its proposal.']
+        for path, content in sorted(files.items()):
+            try:
+                ast.parse(content, filename=path)
+                passing.append(f'syntax::{path}')
+            except SyntaxError as exc:
+                failing.append(f'syntax::{path}')
+                diagnostics.append(f'{path}:{exc.lineno or 1}:{exc.offset or 1}: SyntaxError: {exc.msg}')
+        return {
+            'passing': passing,
+            'failing': failing,
+            'skipped': [],
+            'errors': [],
+            'test_files': [],
+            'mode': 'static',
+            'exit_code': 1 if failing else 0,
+            'output': '\n'.join(diagnostics),
+            'valid': True,
+        }
     ensure_execution_allowed(files)
     with tempfile.TemporaryDirectory(prefix='sentinel-', dir='/tmp') as tmp:
         root = Path(tmp) / 'project'
@@ -118,35 +140,39 @@ def run_tests(files: dict) -> dict:
         for path, content in files.items():
             target = root / path
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content)
+            target.write_text(content, encoding='utf-8')
         report = Path(tmp) / 'evidence.json'
         env = {'PATH': os.defpath, 'HOME': tmp, 'TMPDIR': tmp, 'PYTEST_DISABLE_PLUGIN_AUTOLOAD': '1', 'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONIOENCODING': 'utf-8'}
-        # Output is bounded when returned. The reviewed demos produce tiny logs.
         with tempfile.TemporaryFile(dir='/tmp') as logs:
             try:
-                result = subprocess.run([sys.executable, '-c', RUNNER, str(report)], cwd=root, env=env, stdout=logs, stderr=subprocess.STDOUT, timeout=8, check=False)
+                result = subprocess.run([sys.executable, '-c', RUNNER, str(report)], cwd=root, env=env, stdout=logs, stderr=subprocess.STDOUT, timeout=8, check=False, start_new_session=True)
             except subprocess.TimeoutExpired as exc:
                 raise ValueError('Test execution exceeded 8 seconds; no changes were kept.') from exc
             logs.seek(0)
             output = logs.read(24_000).decode(errors='replace')
         if not report.exists() or result.returncode != 0:
             raise ValueError('The test runner failed; no changes were kept.')
-        evidence = json.loads(report.read_text())
+        evidence = json.loads(report.read_text(encoding='utf-8'))
         states = evidence['states']
-        return {'passing': sorted(k for k,v in states.items() if v == 'passed'), 'failing': sorted(k for k,v in states.items() if v == 'failed'), 'skipped': sorted(k for k,v in states.items() if v == 'skipped'), 'errors': evidence['errors'], 'exit_code': evidence['exit_code'], 'output': output, 'valid': evidence['exit_code'] in (0, 1) and not evidence['errors'] and bool(states)}
+        return {'passing': sorted(k for k,v in states.items() if v == 'passed'), 'failing': sorted(k for k,v in states.items() if v == 'failed'), 'skipped': sorted(k for k,v in states.items() if v == 'skipped'), 'errors': evidence['errors'], 'test_files': test_files, 'mode': 'pytest', 'exit_code': evidence['exit_code'], 'output': output, 'valid': evidence['exit_code'] in (0, 1) and not evidence['errors'] and bool(states)}
 
 
 def decide(baseline: dict, after: dict) -> dict:
+    if baseline.get('mode') == 'static':
+        accepted = bool(after['valid'] and after.get('mode') == 'pytest' and after.get('test_files') and after['passing'] and not after['failing'] and not after['errors'])
+        reason = 'No original pytest suite existed. The repair added regression tests and all candidate tests passed.' if accepted else 'No original test suite existed. A repair is accepted only after adding meaningful pytest regression tests that pass.'
+        return {'accepted': accepted, 'regressions': [], 'reason': reason}
     regressions = sorted(set(baseline['passing']) - set(after['passing']))
     missing = sorted((set(baseline['passing']) | set(baseline['failing'])) - (set(after['passing']) | set(after['failing'])))
-    accepted = bool(baseline['valid'] and after['valid'] and not regressions and not missing and (len(after['failing']) < len(baseline['failing']) or not after['failing']))
+    improved = len(after['failing']) < len(baseline['failing']) or not after['failing']
+    recovered_collection = bool(baseline.get('errors') and after['valid'] and not after['failing'])
+    accepted = bool(after['valid'] and not regressions and not missing and ((baseline['valid'] and improved) or recovered_collection))
     reason = 'Zero regressions. All baseline tests retained; failures reduced or all tests pass.' if accepted else 'Discarded: regression, missing/skipped test, invalid suite, or no reduction in failures.'
     return {'accepted': accepted, 'regressions': regressions, 'reason': reason}
 
 
 def verify(files: dict, edits: list, baseline: dict | None = None) -> dict:
     candidate = apply_edits(files, edits)
-    # Recompute instead of trusting browser-supplied baseline claims.
     before = run_tests(files)
     after = run_tests(candidate)
     diff = ''.join(''.join(difflib.unified_diff(files.get(path, '').splitlines(True), candidate[path].splitlines(True), fromfile='a/'+path, tofile='b/'+path)) for path in candidate if files.get(path) != candidate[path])
