@@ -107,7 +107,6 @@ function App() {
   const [githubUrl, setGithubUrl] = useState("");
   const [newFile, setNewFile] = useState("");
   const [showNewFile, setShowNewFile] = useState(false);
-  const [trustConfirmed, setTrustConfirmed] = useState(false);
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
   const [before, setBefore] = useState<Evidence | null>(null);
   const [result, setResult] = useState<Verification | null>(null);
@@ -130,7 +129,7 @@ function App() {
   }, []);
 
   function clearEvidence() {
-    setBefore(null); setResult(null); setProposal(null); setAttempts([]); setTimeline([]); setCompleted(false); setTrustConfirmed(false);
+    setBefore(null); setResult(null); setProposal(null); setAttempts([]); setTimeline([]); setCompleted(false);
   }
   function updateWorkspace(next: Partial<Workspace>) {
     setWorkspace((current) => ({ ...current, ...next }));
@@ -155,7 +154,7 @@ function App() {
       const imported = await api<{ name: string; default_branch: string; files: Files; source_url: string }>("import-github", { url: githubUrl }, 60000);
       const first = Object.keys(imported.files).sort()[0];
       setWorkspace({ name: imported.name, files: imported.files, task: "", active: first });
-      setOpenRouterConnected(false); clearEvidence(); setTrustConfirmed(false);
+      setOpenRouterConnected(false); clearEvidence();
       setNotice(`Imported ${Object.keys(imported.files).length} Python files from ${imported.name} (${imported.default_branch}). Review the code before running it.`);
       setGithubUrl("");
     } catch (e) { setError(e instanceof Error ? e.message : "Repository import failed."); }
@@ -172,7 +171,6 @@ function App() {
   async function runAgent() {
     if (!config?.execution_enabled) return setError("Local test execution is disabled. Review the setup instructions and enable it only for code you trust.");
     if (!config.ai_enabled || !openrouterConnected) return setError("OpenRouter requests are unavailable. Check server configuration and verify the API connection.");
-    if (!trustConfirmed) return setError("Confirm that you trust this source code before it is executed locally.");
     setBusy(true); setError(""); setNotice(""); setBefore(null); setResult(null); setProposal(null); setAttempts([]); setCompleted(false); setTestTask(workspace.task);
     setTimeline([{ title: "Running baseline tests", detail: "Collecting pytest evidence from the current project.", state: "working" }]);
     const original = { ...workspace.files };
@@ -227,7 +225,7 @@ function App() {
   const passed = result?.accepted ? result.after.passing.length : before?.passing.length;
   const failed = result?.accepted ? result.after.failing.length : before?.failing.length;
   const evidenceMode = result?.accepted ? result.after.mode : before?.mode;
-  const canRun = Boolean(config?.execution_enabled && config.ai_enabled && openrouterConnected && trustConfirmed && workspace.task.trim() && !busy);
+  const canRun = Boolean(config?.execution_enabled && config.ai_enabled && openrouterConnected && workspace.task.trim() && !busy);
 
   return <div className="app-shell">
     <aside className="rail" aria-label="Primary navigation">
@@ -271,7 +269,7 @@ function App() {
               {activeFile ? <div className="editor-body"><div className="line-numbers" aria-hidden="true">{(workspace.files[activeFile] || "").split("\n").map((_, index) => <span key={index}>{index + 1}</span>)}</div><textarea className="code-input" aria-label={`Edit ${activeFile}`} spellCheck={false} disabled={busy || importing} value={workspace.files[activeFile] || ""} placeholder="# Write or review Python code here" onChange={(event) => updateWorkspace({ files: { ...workspace.files, [activeFile]: event.target.value } })} /></div> : <div className="empty-editor">Create a Python file or import a public GitHub repository to begin.</div>}
               <div className="editor-footer"><span><i className="python-dot" /> Python</span><span>UTF-8 <b>·</b> Saved in this browser</span></div>
             </div>
-            <div className="task-input"><label htmlFor="task"><Sparkles size={14} /> TASK FOR OPENROUTER</label><textarea id="task" value={workspace.task} maxLength={8000} placeholder="Paste the traceback, describe expected behavior, and note the smallest acceptable fix…" disabled={busy} onChange={(event) => updateWorkspace({ task: event.target.value })} /><div className="run-row"><label className="trust-check"><input type="checkbox" checked={trustConfirmed} onChange={(event) => setTrustConfirmed(event.target.checked)} disabled={!config?.execution_enabled || busy} /><span>I trust this source to execute locally.</span></label><button className="run-button" onClick={runAgent} disabled={!canRun}>{busy ? <LoaderCircle className="spin" size={15} /> : <Terminal size={15} />}{busy ? "Working…" : "Run repair"}<ArrowRight size={14} /></button></div><p className="run-help">Add failing pytest cases under <code>tests/</code>. Your task, source files, and test output are sent to OpenRouter free-model providers; remove secrets. {!config?.execution_enabled && !config?.hosted && "Enable the local runner only for source you control and trust."}</p></div>
+            <div className="task-input"><label htmlFor="task"><Sparkles size={14} /> TASK FOR OPENROUTER</label><textarea id="task" value={workspace.task} maxLength={8000} placeholder="Paste the traceback, describe expected behavior, and note the smallest acceptable fix…" disabled={busy} onChange={(event) => updateWorkspace({ task: event.target.value })} /><div className="run-row"><button className="run-button" onClick={runAgent} disabled={!canRun}>{busy ? <LoaderCircle className="spin" size={15} /> : <Terminal size={15} />}{busy ? "Working…" : "Run repair"}<ArrowRight size={14} /></button></div><p className="run-help">Add failing pytest cases under <code>tests/</code>. Your task, source files, and test output are sent to OpenRouter free-model providers; remove secrets. {!config?.execution_enabled && !config?.hosted && "Enable the local runner in the server environment before running trusted source."}</p></div>
           </section>
 
           <section className="panel observer-panel">
