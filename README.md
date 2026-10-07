@@ -71,3 +71,4 @@ Paste a public repository root URL such as `https://github.com/owner/repository`
 `npm run build` emits the Vite frontend to `dist`; Python handlers are under `api/`. Vercel can serve the frontend and API shape, but **hosted test execution is deliberately unavailable** until a real isolated execution service is integrated. Do not enable public AI requests without authentication, abuse controls, and a budget policy; the browser must never contain the provider key. Public repository import is read-only, but serverless provider quotas still apply. Review `docs/DEPLOY.md` before publishing.
 
 This project has no login, database, isolated execution service, persistent server-side project storage, or abuse-rate-limit service. Those are production deployment requirements for shared/public use. Local browser persistence is per browser profile. Passing tests provide evidence for the tested suite, not proof of universal correctness.
+# sentinel-aiagent
