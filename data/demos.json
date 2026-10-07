@@ -1,0 +1,62 @@
+[
+  {
+    "id": "cart",
+    "name": "Shop cart",
+    "description": "Quantity accumulation & discount arithmetic",
+    "task": "Fix the failing tests. Keep the existing cart behavior and make the smallest safe change.",
+    "files": {
+      "cart.py": "class Cart:\n    def __init__(self):\n        self.items = {}\n\n    def add(self, name, price, quantity=1):\n        self.items[name] = (price, quantity)\n\n    def subtotal(self):\n        return sum(price * qty for price, qty in self.items.values())\n\n    def total(self, discount_percent=0):\n        return self.subtotal() * (1 + discount_percent / 100)\n",
+      "test_cart.py": "from cart import Cart\n\n\ndef test_empty():\n    assert Cart().subtotal() == 0\n\n\ndef test_add():\n    cart = Cart()\n    cart.add(\"book\", 10, 2)\n    assert cart.subtotal() == 20\n\n\ndef test_accumulate():\n    cart = Cart()\n    cart.add(\"book\", 10, 2)\n    cart.add(\"book\", 10, 1)\n    assert cart.subtotal() == 30\n\n\ndef test_discount():\n    cart = Cart()\n    cart.add(\"book\", 100)\n    assert cart.total(20) == 80\n\n\ndef test_no_discount():\n    cart = Cart()\n    cart.add(\"book\", 10)\n    assert cart.total() == 10\n"
+    },
+    "fixed": {
+      "cart.py": "class Cart:\n    def __init__(self):\n        self.items = {}\n\n    def add(self, name, price, quantity=1):\n        previous = self.items.get(name, (price, 0))[1]\n        self.items[name] = (price, previous + quantity)\n\n    def subtotal(self):\n        return sum(price * qty for price, qty in self.items.values())\n\n    def total(self, discount_percent=0):\n        return self.subtotal() * (1 - discount_percent / 100)\n"
+    },
+    "explanation": "Adding an existing item overwrote its quantity. The discount calculation also increased the price. Accumulate the previous quantity and subtract the discount instead.",
+    "expected": [
+      3,
+      2,
+      5,
+      0
+    ]
+  },
+  {
+    "id": "cart-remove",
+    "name": "Shop cart \u00b7 add a feature",
+    "description": "Add remove(name), with existing behavior preserved",
+    "task": "Fix the cart bugs and add a remove(name) method so test_remove passes.",
+    "files": {
+      "cart.py": "class Cart:\n    def __init__(self):\n        self.items = {}\n\n    def add(self, name, price, quantity=1):\n        self.items[name] = (price, quantity)\n\n    def subtotal(self):\n        return sum(price * qty for price, qty in self.items.values())\n\n    def total(self, discount_percent=0):\n        return self.subtotal() * (1 + discount_percent / 100)\n",
+      "test_cart.py": "from cart import Cart\n\n\ndef test_empty():\n    assert Cart().subtotal() == 0\n\n\ndef test_add():\n    cart = Cart()\n    cart.add(\"book\", 10, 2)\n    assert cart.subtotal() == 20\n\n\ndef test_accumulate():\n    cart = Cart()\n    cart.add(\"book\", 10, 2)\n    cart.add(\"book\", 10, 1)\n    assert cart.subtotal() == 30\n\n\ndef test_discount():\n    cart = Cart()\n    cart.add(\"book\", 100)\n    assert cart.total(20) == 80\n\n\ndef test_no_discount():\n    cart = Cart()\n    cart.add(\"book\", 10)\n    assert cart.total() == 10\n\n\ndef test_remove():\n    cart = Cart()\n    cart.add(\"book\", 10)\n    cart.remove(\"book\")\n    assert cart.subtotal() == 0\n"
+    },
+    "fixed": {
+      "cart.py": "class Cart:\n    def __init__(self):\n        self.items = {}\n\n    def add(self, name, price, quantity=1):\n        previous = self.items.get(name, (price, 0))[1]\n        self.items[name] = (price, previous + quantity)\n\n    def subtotal(self):\n        return sum(price * qty for price, qty in self.items.values())\n\n    def total(self, discount_percent=0):\n        return self.subtotal() * (1 - discount_percent / 100)\n\n    def remove(self, name):\n        self.items.pop(name, None)\n"
+    },
+    "explanation": "Accumulate quantities, subtract discounts, and add remove(name) using pop with a default so absent items are harmless.",
+    "expected": [
+      3,
+      3,
+      6,
+      0
+    ]
+  },
+  {
+    "id": "strings",
+    "name": "String utilities",
+    "description": "Whitespace-safe initials and predictable slugs",
+    "task": "Fix initials so leading, repeated, and trailing whitespace are handled correctly. Preserve slug behavior.",
+    "files": {
+      "text_utils.py": "def initials(name):\n    return \"\".join(word[0].upper() for word in name.split(\" \"))\n\n\ndef slug(text):\n    return \"-\".join(text.lower().split())\n",
+      "test_text_utils.py": "from text_utils import initials, slug\n\n\ndef test_initials():\n    assert initials(\"Ada Lovelace\") == \"AL\"\n\n\ndef test_single():\n    assert initials(\"Ada\") == \"A\"\n\n\ndef test_whitespace():\n    assert initials(\"  Ada   Lovelace  \") == \"AL\"\n\n\ndef test_slug():\n    assert slug(\"Hello World\") == \"hello-world\"\n\n\ndef test_slug_spaces():\n    assert slug(\"  Hello   World \") == \"hello-world\"\n"
+    },
+    "fixed": {
+      "text_utils.py": "def initials(name):\n    return \"\".join(word[0].upper() for word in name.split())\n\n\ndef slug(text):\n    return \"-\".join(text.lower().split())\n"
+    },
+    "explanation": "Splitting on a literal space produces empty words for repeated or surrounding whitespace, causing an IndexError. split() without a separator discards empty whitespace segments.",
+    "expected": [
+      4,
+      1,
+      5,
+      0
+    ]
+  }
+]
