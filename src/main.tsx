@@ -169,14 +169,29 @@ function App() {
     finally { setCheckingOpenRouter(false); }
   }
   async function runAgent() {
-    if (!config?.execution_enabled) return setError("Local test execution is disabled. Review the setup instructions and enable it only for code you trust.");
-    if (!config.ai_enabled || !openrouterConnected) return setError("OpenRouter requests are unavailable. Check server configuration and verify the API connection.");
+    if (!config || !config.ai_enabled || !openrouterConnected) return setError("OpenRouter requests are unavailable. Check server configuration and verify the API connection.");
     setBusy(true); setError(""); setNotice(""); setBefore(null); setResult(null); setProposal(null); setAttempts([]); setCompleted(false); setTestTask(workspace.task);
-    setTimeline([{ title: "Running baseline tests", detail: "Collecting pytest evidence from the current project.", state: "working" }]);
     const original = { ...workspace.files };
     let feedback = "";
     const history: Attempt[] = [];
     try {
+      if (config.hosted) {
+        setTimeline([{ title: "Requesting a hosted proposal", detail: "Vercel will not execute uploaded Python; OpenRouter is reviewing the source and task only.", state: "working" }]);
+        const hostedProposal = await api<Proposal>("propose", {
+          task: workspace.task,
+          files: original,
+          test_output: "Hosted preview: pytest execution is unavailable. Do not claim tests passed; provide the smallest safe source change and regression tests.",
+        }, 60000);
+        setProposal(hostedProposal);
+        history.push({ number: 1, proposal: hostedProposal });
+        setAttempts([...history]);
+        setTimeline([{ title: "Hosted proposal ready", detail: "Review the suggested diff locally and run pytest before applying it.", state: "ok" }]);
+        setNotice("Proposal ready. Hosted Vercel mode does not execute or apply Python; review and test this change locally.");
+        setTab("explanation");
+        setCompleted(true);
+        return;
+      }
+      setTimeline([{ title: "Running baseline tests", detail: "Collecting pytest evidence from the current project.", state: "working" }]);
       const baseline = await api<Evidence>("baseline", { files: original }, 20000);
       setBefore(baseline);
       setTimeline([{ title: baseline.mode === "static" ? "Python syntax checked" : "Pytest baseline recorded", detail: baseline.mode === "static" ? `${baseline.failing.length ? `${baseline.failing.length} syntax error(s)` : "No syntax errors"} · no pytest suite yet` : baseline.valid ? `${baseline.passing.length} passed · ${baseline.failing.length} failed · ${baseline.skipped.length} skipped` : `${baseline.errors.length ? "Collection error" : "No tests collected"} · Open Test output for details`, state: baseline.valid ? "ok" : "bad" }]);
@@ -225,7 +240,7 @@ function App() {
   const passed = result?.accepted ? result.after.passing.length : before?.passing.length;
   const failed = result?.accepted ? result.after.failing.length : before?.failing.length;
   const evidenceMode = result?.accepted ? result.after.mode : before?.mode;
-  const canRun = Boolean(config?.execution_enabled && config.ai_enabled && openrouterConnected && workspace.task.trim() && !busy);
+  const canRun = Boolean(config && (config.execution_enabled || config.hosted) && config.ai_enabled && openrouterConnected && workspace.task.trim() && !busy);
 
   return <div className="app-shell">
     <aside className="rail" aria-label="Primary navigation">
@@ -269,7 +284,7 @@ function App() {
               {activeFile ? <div className="editor-body"><div className="line-numbers" aria-hidden="true">{(workspace.files[activeFile] || "").split("\n").map((_, index) => <span key={index}>{index + 1}</span>)}</div><textarea className="code-input" aria-label={`Edit ${activeFile}`} spellCheck={false} disabled={busy || importing} value={workspace.files[activeFile] || ""} placeholder="# Write or review Python code here" onChange={(event) => updateWorkspace({ files: { ...workspace.files, [activeFile]: event.target.value } })} /></div> : <div className="empty-editor">Create a Python file or import a public GitHub repository to begin.</div>}
               <div className="editor-footer"><span><i className="python-dot" /> Python</span><span>UTF-8 <b>·</b> Saved in this browser</span></div>
             </div>
-            <div className="task-input"><label htmlFor="task"><Sparkles size={14} /> TASK FOR OPENROUTER</label><textarea id="task" value={workspace.task} maxLength={8000} placeholder="Paste the traceback, describe expected behavior, and note the smallest acceptable fix…" disabled={busy} onChange={(event) => updateWorkspace({ task: event.target.value })} /><div className="run-row"><button className="run-button" onClick={runAgent} disabled={!canRun}>{busy ? <LoaderCircle className="spin" size={15} /> : <Terminal size={15} />}{busy ? "Working…" : "Run repair"}<ArrowRight size={14} /></button></div><p className="run-help">Add failing pytest cases under <code>tests/</code>. Your task, source files, and test output are sent to OpenRouter free-model providers; remove secrets. {!config?.execution_enabled && !config?.hosted && "Enable the local runner in the server environment before running trusted source."}</p></div>
+            <div className="task-input"><label htmlFor="task"><Sparkles size={14} /> TASK FOR OPENROUTER</label><textarea id="task" value={workspace.task} maxLength={8000} placeholder="Paste the traceback, describe expected behavior, and note the smallest acceptable fix…" disabled={busy} onChange={(event) => updateWorkspace({ task: event.target.value })} /><div className="run-row"><button className="run-button" onClick={runAgent} disabled={!canRun}>{busy ? <LoaderCircle className="spin" size={15} /> : <Terminal size={15} />}{busy ? "Working…" : config?.hosted ? "Request proposal" : "Run repair"}<ArrowRight size={14} /></button></div><p className="run-help">Add failing pytest cases under <code>tests/</code>. Your task, source files, and test output are sent to OpenRouter free-model providers; remove secrets. {config?.hosted ? "Hosted mode generates a proposal only; review and verify it locally." : !config?.execution_enabled && "Enable the local runner in the server environment before running trusted source."}</p></div>
           </section>
 
           <section className="panel observer-panel">
